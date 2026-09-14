@@ -7,8 +7,10 @@ Plenty of tools read an Obsidian vault. Writing to one is the harder half: splic
 into markdown and you leave blank lines behind, lose the fields you did not parse, and
 have no stable way to refer to a task once it moves. This handles those three things.
 
+Not on PyPI yet — install from the repo:
+
 ```bash
-pip install obsidian-task-store
+pip install git+https://github.com/jewell-lgtm/obsidian-task-store
 ```
 
 ```console
