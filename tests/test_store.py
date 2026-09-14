@@ -1,7 +1,7 @@
 import pytest
 
 from obsidian_task_store import TaskStore
-from obsidian_task_store.errors import TaskNotFound
+from obsidian_task_store.errors import TaskNotFound, TaskStoreError
 
 
 def test_zero_config_vault_works(vault):
@@ -124,3 +124,63 @@ def test_fmt_reports_what_it_changed(grouped_vault):
     changed = store.normalise_all()
     assert [str(p) for p in changed] == ["messy.md"]
     assert store.normalise_all() == []
+
+
+def test_tagging_does_not_change_the_id(grouped_vault):
+    """The whole point: an external system can mark a task without
+    invalidating every reference to it."""
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Rework the auth middleware", group="work", section="Now")
+    before = task.id
+
+    tagged = store.tag(before, add=["mp-4LRZHUWXK4AV"])
+
+    assert tagged.id == before
+    assert "mp-4LRZHUWXK4AV" in tagged.tags
+    assert tagged.title == "Rework the auth middleware"
+
+
+def test_tag_is_idempotent(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Ship it", group="work", section="Now")
+    store.tag(task.id, add=["mp-ABC"])
+    store.tag(task.id, add=["mp-ABC"])
+    assert (grouped_vault / "work" / "todo.md").read_text().count("#mp-ABC") == 1
+
+
+def test_tag_removes_only_the_exact_tag(grouped_vault):
+    """#mp must not match #mp-ABC, or removing a marker takes the id with it."""
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Ship it", group="work", section="Now")
+    store.tag(task.id, add=["mp-ABC", "mp"])
+
+    tagged = store.tag(task.id, remove=["mp"])
+
+    assert "mp-ABC" in tagged.tags
+    assert "mp" not in tagged.tags
+
+
+def test_tag_refuses_another_groups_tag(grouped_vault):
+    """The folder decides the group, so such a tag would be a lie."""
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Ship it", group="work", section="Now")
+    with pytest.raises(TaskStoreError):
+        store.tag(task.id, add=["home"])
+
+
+def test_tag_refuses_an_unusable_name(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Ship it", group="work", section="Now")
+    with pytest.raises(TaskStoreError):
+        store.tag(task.id, add=["has space"])
+
+
+def test_tag_leaves_the_rest_of_the_line_alone(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Ship it", group="work", section="Now", due="2026-01-01")
+
+    tagged = store.tag(task.id, add=["mp-ABC"])
+
+    assert tagged.due == "2026-01-01"
+    assert tagged.title == "Ship it"
+    assert not tagged.done

@@ -6,7 +6,7 @@ import re
 from datetime import date
 
 from .config import Config
-from .errors import AmbiguousTask, TaskNotFound
+from .errors import AmbiguousTask, TaskNotFound, TaskStoreError
 from .model import DATE_SIGNIFIERS, EMOJI_BY_PRIORITY, PRIORITY_RANK, Task
 from .parse import parse_vault
 from .serialise import insert_into_section, normalise, remove_line, replace_line
@@ -124,6 +124,48 @@ class TaskStore:
             self._edit(task.path, lambda text: remove_line(text, task.lineno, task.render()))
             self._edit(dest, lambda text: insert_into_section(text, section, line))
         return self.get(Task.parse(line, group=group).id)
+
+    def tag(self, ident, *, add=(), remove=()):
+        """Add and remove tags on a task in place.
+
+        Tags are stripped before the id is derived, so tagging never changes
+        what a task answers to. That is the point: an external system can mark
+        a task without invalidating every reference to it.
+
+        Tags live in the description, ahead of the date signifiers — appending
+        to the end of the line would put the tag inside the due date's value.
+        """
+        task = self.get(ident)
+        before = task.render()
+        description = task.description
+
+        for name in remove:
+            name = name.lstrip("#")
+            description = re.sub(
+                rf"#{re.escape(name)}(?![A-Za-z0-9_\-/])", "", description
+            )
+
+        for name in add:
+            name = name.lstrip("#")
+            if not re.fullmatch(r"[A-Za-z0-9_\-/]+", name):
+                raise TaskStoreError(
+                    f"invalid tag {name!r}: letters, digits, _, - and / only"
+                )
+            if name in self.config.groups and name != task.group:
+                raise TaskStoreError(
+                    f"refusing to tag a {task.group or 'ungrouped'} task #{name}: "
+                    "the folder decides the group, so the tag would be a lie"
+                )
+            if re.search(rf"#{re.escape(name)}(?![A-Za-z0-9_\-/])", description):
+                continue
+            description = f"{description} #{name}"
+
+        task.set_description(re.sub(r"\s{2,}", " ", description).strip())
+        after = task.render()
+        self._edit(
+            task.path, lambda text: replace_line(text, task.lineno, before, after)
+        )
+        return self.get(ident)
 
     def remove(self, ident):
         task = self.get(ident)

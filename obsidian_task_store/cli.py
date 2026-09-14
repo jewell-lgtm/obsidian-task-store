@@ -61,6 +61,12 @@ def cmd_move(args, store):
     print(f"{task.id}  moved to {args.group}/{args.section}  {task.title}")
 
 
+def cmd_tag(args, store):
+    task = store.tag(args.id, add=args.add, remove=args.rm)
+    tags = " ".join(f"#{t}" for t in task.tags) or "(none)"
+    print(f"{task.id}  tagged  {tags}  {task.title}")
+
+
 def cmd_rm(args, store):
     for ident in args.ids:
         task = store.remove(ident)
@@ -106,6 +112,14 @@ def build_parser():
     p.add_argument("--group", required=True)
     p.add_argument("--section", default="Now")
     p.set_defaults(fn=cmd_move)
+
+    p = sub.add_parser("tag", help="add or remove tags on a task")
+    p.add_argument("id")
+    p.add_argument("--add", action="append", default=[], metavar="TAG",
+                   help="tag to add; repeatable")
+    p.add_argument("--rm", action="append", default=[], metavar="TAG",
+                   help="tag to remove; repeatable")
+    p.set_defaults(fn=cmd_tag)
 
     p = sub.add_parser("rm", help="delete tasks")
     p.add_argument("ids", nargs="+")
