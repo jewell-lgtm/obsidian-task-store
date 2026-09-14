@@ -1,0 +1,24 @@
+# Pin the floor version the package claims to support, so the test run
+# exercises the oldest interpreter rather than the newest available.
+[tools]
+python = "3.11"
+uv = "latest"
+
+[tasks.install]
+run = "uv sync --all-extras"
+
+[tasks.test]
+run = "uv run pytest"
+
+[tasks.lint]
+run = "uv run ruff check ."
+
+[tasks.fix]
+run = "uv run ruff check --fix ."
+
+[tasks.build]
+run = "uv build"
+
+[tasks.roundtrip]
+description = "Re-render every task in a real vault and diff against the original"
+run = "uv run python -m obsidian_task_store._roundtrip"

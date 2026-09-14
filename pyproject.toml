@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "obsidian-task-store"
+version = "0.1.0"
+description = "Treat an Obsidian vault as a task store: structural writes, stable task ids, agent-friendly output"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Matt Jewell", email = "m@mattjewell.co.uk" }]
+keywords = ["obsidian", "tasks", "markdown", "todo", "cli", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/jewell-lgtm/obsidian-task-store"
+Issues = "https://github.com/jewell-lgtm/obsidian-task-store/issues"
+
+[project.scripts]
+ots = "obsidian_task_store.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6", "build>=1.2"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["obsidian_task_store"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
