@@ -7,11 +7,29 @@ Plenty of tools read an Obsidian vault. Writing to one is the harder half: splic
 into markdown and you leave blank lines behind, lose the fields you did not parse, and
 have no stable way to refer to a task once it moves. This handles those three things.
 
-Not on PyPI yet — install from the repo:
+## Install
+
+Not on PyPI yet, so installation means pointing at the repo. `ots` is a CLI, so a tool
+install is usually what you want — it keeps the package out of whatever environment you
+happen to be standing in:
+
+```bash
+uv tool install git+https://github.com/jewell-lgtm/obsidian-task-store
+# or
+pipx install git+https://github.com/jewell-lgtm/obsidian-task-store
+```
+
+To use the library, install it into the environment that imports it:
 
 ```bash
 pip install git+https://github.com/jewell-lgtm/obsidian-task-store
 ```
+
+The `git+` prefix is load-bearing. Hand pip the plain repo URL and it downloads GitHub's
+HTML page and fails trying to unpack it, in wording that never mentions the URL —
+`cannot detect archive format` on some platforms, `Access is denied.` on others. And
+`pip install obsidian-task-store` finds nothing at all, because the name is not on an
+index yet.
 
 ```console
 $ ots list --group work
