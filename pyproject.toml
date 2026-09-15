@@ -33,6 +33,11 @@ ots = "obsidian_task_store.cli:main"
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6", "build>=1.2"]
 
+[tool.hatch.build.targets.sdist]
+# Worktree state from monkeypuzzle, ignored locally rather than in .gitignore,
+# so the build backend does not know to leave it out.
+exclude = [".monkeypuzzle"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["obsidian_task_store"]
 
