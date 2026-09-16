@@ -9,13 +9,16 @@
 
 from .config import Config
 from .errors import (
+    AmbiguousNoteLine,
     AmbiguousTask,
+    NoteLineNotFound,
     SectionNotFound,
     StaleTask,
     TaskNotFound,
     TaskStoreError,
 )
 from .model import Task
+from .notes import NoteMark, mark_line
 from .parse import parse_document, parse_vault
 from .serialise import normalise
 from .store import TaskStore
@@ -23,7 +26,8 @@ from .store import TaskStore
 __version__ = "0.1.0"
 
 __all__ = [
-    "Config", "Task", "TaskStore",
+    "Config", "Task", "TaskStore", "NoteMark",
     "TaskStoreError", "TaskNotFound", "AmbiguousTask", "SectionNotFound", "StaleTask",
-    "parse_document", "parse_vault", "normalise",
+    "NoteLineNotFound", "AmbiguousNoteLine",
+    "parse_document", "parse_vault", "normalise", "mark_line",
 ]

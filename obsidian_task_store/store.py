@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from .config import Config
+from .config import CONFIG_NAME, Config
 from .errors import AmbiguousTask, TaskNotFound, TaskStoreError
 from .model import DATE_SIGNIFIERS, EMOJI_BY_PRIORITY, PRIORITY_RANK, Task
+from .notes import mark_line
 from .parse import parse_vault
 from .serialise import insert_into_section, normalise, remove_line, replace_line
 
@@ -172,10 +173,38 @@ class TaskStore:
         self._edit(task.path, lambda text: remove_line(text, task.lineno, task.render()))
         return task
 
+    def mark_note(self, ident, path, *, status="done"):
+        """Set the checkbox marker on the one line in a note naming ``ident``.
+
+        A note is not a task source, and this is not completion: it flips the
+        marker on a line that *refers* to a task, so a generated view such as a
+        queue can be ticked off. The real task is completed with ``done``.
+
+        Pointing this at a task source is refused rather than done quietly. The
+        two kinds of checkbox look identical, and an agent that mixed them up
+        would leave a task marked complete with no done date and no Done
+        section move.
+        """
+        target, rel = self.config.note_path(path)
+        if not self.config.is_excluded(rel):
+            raise TaskStoreError(
+                f"{rel} is a task source: its checkboxes are tasks, and `done` owns them. "
+                f"Exclude it in {CONFIG_NAME} if its boxes are for ticking."
+            )
+        return mark_line(target, ident, status=status)
+
     def normalise_all(self):
+        """Re-normalise whitespace across the vault's task sources.
+
+        Excluded files are left alone: they are not written by this package
+        except one marker at a time, and normalising a generated document would
+        be a large unasked-for diff.
+        """
         changed = []
         for path in sorted(self.config.root.rglob("*.md")):
             if ".git" in path.parts:
+                continue
+            if self.config.is_excluded(path.relative_to(self.config.root)):
                 continue
             before = path.read_text()
             after = normalise(before)

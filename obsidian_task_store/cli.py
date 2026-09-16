@@ -12,6 +12,7 @@ import sys
 
 from .errors import TaskStoreError
 from .model import PRIORITY_RANK
+from .notes import MARKS
 from .store import TaskStore
 
 
@@ -82,6 +83,12 @@ def cmd_fmt(args, store):
     print("\n".join(str(p) for p in changed) if changed else "already tidy")
 
 
+def cmd_note_mark(args, store):
+    mark = store.mark_note(args.id, args.file, status=args.status)
+    already = "" if mark.changed else "already "
+    print(f"{args.id}  {already}{args.status}  {args.file}:{mark.lineno}")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="ots", description="Tasks in an Obsidian vault")
     parser.add_argument("--vault", help="vault root (default: discovered from .tasks.toml)")
@@ -128,6 +135,16 @@ def build_parser():
     p = sub.add_parser("show", help="one task as json")
     p.add_argument("id")
     p.set_defaults(fn=cmd_show)
+
+    p = sub.add_parser("note", help="tick a checkbox in a note that is not a task source")
+    note = p.add_subparsers(dest="note_command", required=True)
+    n = note.add_parser("mark", help="set the marker on the line referencing a task id")
+    n.add_argument("id")
+    n.add_argument("--in", dest="file", required=True, metavar="PATH",
+                   help="the note, relative to the vault root")
+    n.add_argument("--as", dest="status", choices=sorted(MARKS), default="done",
+                   help="marker to write (default: done)")
+    n.set_defaults(fn=cmd_note_mark)
 
     p = sub.add_parser("fmt", help="normalise whitespace across the vault")
     p.set_defaults(fn=cmd_fmt)

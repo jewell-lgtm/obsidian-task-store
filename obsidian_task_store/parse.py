@@ -44,10 +44,17 @@ def iter_markdown(root):
 
 
 def parse_vault(config):
-    """Every task in the vault, with groups resolved from config."""
+    """Every task in the vault, with groups resolved from config.
+
+    Excluded files are skipped outright. Their checkboxes are for ticking, not
+    tasks, and reporting a day plan's boxes as tasks is the same mistake as
+    reporting the ones inside a fence.
+    """
     tasks = []
     for path in iter_markdown(config.root):
         rel = path.relative_to(config.root)
+        if config.is_excluded(rel):
+            continue
         text = path.read_text()
         # Group by folder first; a tag can only settle it for files that sit
         # outside every group folder, such as the shared inbox.

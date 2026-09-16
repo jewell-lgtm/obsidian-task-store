@@ -23,3 +23,11 @@ class StaleTask(TaskStoreError):
     Guards the common case of another writer editing the vault between a read
     and a write. It is an optimistic check, not a lock.
     """
+
+
+class NoteLineNotFound(TaskStoreError):
+    """No checkbox line in the note references that task id."""
+
+
+class AmbiguousNoteLine(TaskStoreError):
+    """More than one checkbox line in the note references the same task id."""

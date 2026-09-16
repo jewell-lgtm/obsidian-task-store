@@ -7,6 +7,8 @@ import pathlib
 import tomllib
 from dataclasses import dataclass, field
 
+from .errors import TaskStoreError
+
 CONFIG_NAME = ".tasks.toml"
 ENV_VAR = "OBSIDIAN_TASK_STORE_VAULT"
 
@@ -25,6 +27,7 @@ class Config:
     sections: list = field(default_factory=lambda: ["Now", "Later", "Done"])
     done_section: str = "Done"
     groups: dict = field(default_factory=dict)
+    exclude: list = field(default_factory=list)
 
     @classmethod
     def load(cls, start=None):
@@ -41,11 +44,39 @@ class Config:
             sections=list(data.get("sections", ["Now", "Later", "Done"])),
             done_section=data.get("done_section", "Done"),
             groups=dict(data.get("groups", {})),
+            exclude=list(data.get("exclude", [])),
         )
+
+    def is_excluded(self, relpath):
+        """Is this file kept out of the task sources?
+
+        An excluded file's checkboxes are for ticking, not tasks: the day's
+        plan, a handover's acceptance criteria, the generated queue. An entry
+        names one file or, with or without a trailing slash, a folder.
+        """
+        rel = _slashes(relpath).removeprefix("./")
+        for entry in self.exclude:
+            entry = _slashes(entry).removeprefix("./").rstrip("/")
+            if entry and (rel == entry or rel.startswith(f"{entry}/")):
+                return True
+        return False
+
+    def note_path(self, path):
+        """Resolve a note path given on the command line, inside the vault."""
+        target = pathlib.Path(path).expanduser()
+        target = target if target.is_absolute() else self.root / target
+        target = target.resolve()
+        try:
+            rel = target.relative_to(self.root)
+        except ValueError:
+            raise TaskStoreError(f"{path} is outside the vault") from None
+        if not target.is_file():
+            raise TaskStoreError(f"no such file: {rel}")
+        return target, rel
 
     def group_for(self, relpath, tags=()):
         """Which group a task belongs to: by folder first, then by tag."""
-        rel = str(relpath).replace(os.sep, "/")
+        rel = _slashes(relpath)
         best = ""
         for name, prefix in self.groups.items():
             prefix = prefix.rstrip("/") + "/"
@@ -69,6 +100,10 @@ class Config:
         if group not in self.groups:
             raise KeyError(f"unknown group: {group}")
         return self.root / self.groups[group].rstrip("/")
+
+
+def _slashes(path):
+    return str(path).replace(os.sep, "/")
 
 
 def _find_root(start=None):
