@@ -1,6 +1,8 @@
 """Ticking one checkbox in a note that is not a task source."""
 
 import pathlib
+import subprocess
+import sys
 import threading
 
 import pytest
@@ -12,6 +14,7 @@ from obsidian_task_store.errors import (
     NoteLineNotFound,
     TaskStoreError,
 )
+from obsidian_task_store.locking import locked_text
 
 CONFIG = """
 inbox = "todo.md#Inbox"
@@ -206,6 +209,34 @@ def test_a_missing_note_is_refused(queue_vault):
 # ------------------------------------------------------ never near a task file
 
 
+def test_the_inbox_cannot_be_excluded_out_from_under_add(vault):
+    """An excluded destination is refused before anything is written."""
+    root = vault({"todo.md": "# Todo\n\n## Inbox\n"}, config='exclude = ["todo.md"]\n')
+    before = (root / "todo.md").read_bytes()
+    with pytest.raises(TaskStoreError, match="cannot hold tasks"):
+        TaskStore.open(root).add("Buy milk")
+    assert (root / "todo.md").read_bytes() == before
+
+
+def test_a_link_into_an_excluded_folder_is_refused(queue_vault):
+    """One file, one identity: an alias would be a note down one path only."""
+    (queue_vault / "alias.md").symlink_to(queue_vault / "pima/queue.md")
+    before = read(queue_vault)
+    with pytest.raises(TaskStoreError, match="is a link to"):
+        TaskStore.open(queue_vault).mark_note("6670", "alias.md")
+    assert read(queue_vault) == before
+
+
+def test_a_link_out_of_an_excluded_folder_is_refused(queue_vault):
+    (queue_vault / "pima/notes/handovers").mkdir(parents=True)
+    link = queue_vault / "pima/notes/handovers/sneaky.md"
+    link.symlink_to(queue_vault / "pima/todo.md")
+    before = read(queue_vault, "pima/todo.md")
+    with pytest.raises(TaskStoreError, match="is a link to"):
+        TaskStore.open(queue_vault).mark_note("6670", "pima/notes/handovers/sneaky.md")
+    assert read(queue_vault, "pima/todo.md") == before
+
+
 def test_a_task_source_is_refused(queue_vault):
     """`done` owns task completion; this must not be a second way in."""
     before = read(queue_vault, "pima/todo.md")
@@ -227,9 +258,52 @@ def test_an_excluded_note_is_not_a_task_source(queue_vault):
 
 
 def test_fmt_leaves_an_excluded_note_alone(queue_vault):
+    """Whitespace `fmt` would certainly rewrite, in a file it must not open."""
+    untidy = "# Plan\n\n\n\n- [ ] do `6670`   \n\n\n"
+    (queue_vault / "pima/queue.md").write_text(untidy)
+    (queue_vault / "pima/todo.md").write_text("# PIMA\n## Now\n\n\n\n## Done\n")
+
+    changed = TaskStore.open(queue_vault).normalise_all()
+
+    assert (queue_vault / "pima/queue.md").read_text() == untidy
+    assert [str(p) for p in changed] == ["pima/todo.md"]
+
+
+# -------------------------------------------------- what is not a checkbox line
+
+
+def test_a_checkbox_inside_a_fence_is_not_a_line(queue_vault):
+    """The likeliest place for an example id is the note explaining itself."""
+    path = queue_vault / "pima/queue.md"
+    path.write_text(path.read_text() + "\n```\n- [ ] **6 ·** **`6670`** example\n```\n")
     before = read(queue_vault)
-    TaskStore.open(queue_vault).normalise_all()
-    assert read(queue_vault) == before
+
+    TaskStore.open(queue_vault).mark_note("6670", "pima/queue.md")
+
+    after = read(queue_vault).decode()
+    assert after.endswith("```\n- [ ] **6 ·** **`6670`** example\n```\n")
+    assert len(before) == len(after.encode())
+
+
+def test_an_empty_note_has_no_line(vault):
+    root = vault(
+        {"todo.md": "# Todo\n\n## Inbox\n", "daily/plan.md": ""},
+        config='exclude = ["daily/"]\n',
+    )
+    with pytest.raises(NoteLineNotFound):
+        TaskStore.open(root).mark_note("6670", "daily/plan.md")
+    assert (root / "daily/plan.md").read_bytes() == b""
+
+
+def test_a_note_that_is_only_frontmatter_has_no_line(vault):
+    text = "---\ntags: [queue]\n---\n"
+    root = vault(
+        {"todo.md": "# Todo\n\n## Inbox\n", "daily/plan.md": text},
+        config='exclude = ["daily/"]\n',
+    )
+    with pytest.raises(NoteLineNotFound):
+        TaskStore.open(root).mark_note("6670", "daily/plan.md")
+    assert (root / "daily/plan.md").read_text() == text
 
 
 # ------------------------------------------------------------- file mechanics
@@ -263,7 +337,49 @@ def test_blank_line_runs_and_indentation_survive(vault):
     assert (root / "daily/plan.md").read_text() == text.replace("- [ ]", "- [x]")
 
 
+def test_mixed_endings_and_multibyte_prose_survive(vault):
+    text = "# Plan é\r\n\n\t- [ ] ship 目標 `6670` — now\r\nlast line"
+    root = vault(
+        {"todo.md": "# Todo\n\n## Inbox\n", "daily/plan.md": text},
+        config='exclude = ["daily/"]\n',
+    )
+    TaskStore.open(root).mark_note("6670", "daily/plan.md")
+    marked = text.replace("- [ ]", "- [x]").encode()
+    assert (root / "daily/plan.md").read_bytes() == marked
+
+
 # ------------------------------------------------------------------ the lock
+
+
+def test_another_process_waits_rather_than_clobbering(queue_vault):
+    """The guarantee is between `ots` processes, so prove it between processes.
+
+    The lock is held here while a real `ots` runs against the same note. It has
+    to block: if it reads now, it reads text without the edit this test is
+    about to make, and writing that back loses it. Then its own mark has to
+    land on top of that edit rather than instead of it.
+    """
+    path = queue_vault / "pima/queue.md"
+    argv = [sys.executable, "-m", "obsidian_task_store.cli", "--vault", str(queue_vault),
+            "note", "mark", "6670", "--in", "pima/queue.md"]
+
+    with locked_text(path) as handle:
+        text = handle.read()
+        child = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            child.wait(0.5)
+        except subprocess.TimeoutExpired:
+            pass
+        assert child.poll() is None, "the second writer did not wait for the lock"
+        handle.seek(0)
+        handle.write(text.replace("- [/] **1", "- [x] **1", 1))
+        handle.truncate()
+
+    assert child.wait(10) == 0
+
+    final = path.read_text()
+    assert line_of(final, "0169").startswith("- [x]"), "the held edit was clobbered"
+    assert line_of(final, "6670").startswith("- [x]")
 
 
 def test_concurrent_marks_do_not_lose_each_other(queue_vault, monkeypatch):
@@ -364,3 +480,14 @@ def test_an_exclude_entry_names_a_file_or_a_folder(entry, rel, excluded):
 
 def test_a_vault_with_no_exclude_excludes_nothing(grouped_vault):
     assert TaskStore.open(grouped_vault).config.exclude == []
+
+
+def test_without_file_locking_the_write_is_refused(queue_vault, monkeypatch):
+    """A platform with no lock gets a refusal, not an unguarded write."""
+    from obsidian_task_store import locking
+
+    monkeypatch.setattr(locking, "fcntl", None)
+    before = read(queue_vault)
+    with pytest.raises(TaskStoreError, match="no file locking"):
+        TaskStore.open(queue_vault).mark_note("6670", "pima/queue.md")
+    assert read(queue_vault) == before

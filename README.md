@@ -107,7 +107,10 @@ home = "home/"
 
 `exclude` names the files whose checkboxes are for ticking rather than tasks — one file, or
 a folder with or without its trailing slash. They are not parsed, not listed, and not
-normalised, and they are the only files `ots note mark` will write to.
+normalised, and they are the only files `ots note mark` will write to. An excluded file
+cannot also be a task destination: excluding the inbox, or a group's `todo.md`, is refused
+when `add` or `move` would write there rather than dropping the task into a file nothing
+reads.
 
 A task's group comes from the folder it lives in. For the shared inbox, which sits outside
 every group folder, a `#work` tag settles it instead.
@@ -165,7 +168,11 @@ the marker in a note, and it refuses a file that is not excluded so that the two
 be confused. The line has to be a checkbox line carrying the id as a whole backticked
 token, `` `6670` ``, which is how such views write ids: a looser match would also hit dates
 and short shas, since an id is four hex characters. No line or two lines is an error and
-no write, because a view with the same id twice is a bug in whatever generated it.
+no write, because a view with the same id twice is a bug in whatever generated it. Fenced
+code is skipped, as it is for tasks — a note explaining how its own boxes work is the
+likeliest place to find an example carrying a real id. A path that resolves somewhere other
+than where it was spelled is refused too: one file needs one identity, or the same document
+would be a note down one path and a task source down another.
 
 Only the one marker character changes. The line's prose, formatting and trailing links, the
 rest of the document, its line endings and its trailing newline all come back identical.
@@ -187,7 +194,8 @@ your write, but two writers racing within the same moment can still interleave.
 instead. It has to: the caller names a line by id rather than by content, so there is
 nothing to check the write against, and two agents ticking two items in the same queue is
 the ordinary case rather than the unlucky one. The lock orders writers going through this
-package on one machine. It does not order an editor saving over the top.
+package on one machine. It does not order an editor saving over the top, and where there is
+no file locking to be had the note write is refused rather than done unguarded.
 
 ## Development
 

@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import contextlib
 
+from .errors import TaskStoreError
+
 try:
     import fcntl
-except ImportError:  # Windows: no fcntl, so the cycle is unordered but intact.
+except ImportError:  # No POSIX locks here — Windows, most likely.
     fcntl = None
 
 
@@ -28,13 +30,19 @@ def locked_text(path):
 
     Opened with newline translation off, so whatever the file's line endings
     are, they survive being read and written back.
+
+    Without a lock to take, the write is refused rather than done unguarded.
+    The caller is told it has exclusive access for the cycle; doing the write
+    anyway would make that a lie on exactly the platform where nobody looks.
     """
+    if fcntl is None:
+        raise TaskStoreError(
+            "no file locking on this platform, so a note cannot be written safely"
+        )
     with open(path, "r+", encoding="utf-8", newline="") as handle:
-        if fcntl is not None:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield handle
         finally:
             handle.flush()
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

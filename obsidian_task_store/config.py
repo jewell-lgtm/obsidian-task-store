@@ -62,17 +62,29 @@ class Config:
         return False
 
     def note_path(self, path):
-        """Resolve a note path given on the command line, inside the vault."""
+        """Where a named note is, inside the vault, or a refusal.
+
+        A path that resolves somewhere other than where it was spelled — an
+        alias, a link out of a folder — is refused rather than followed. One
+        file has to have one identity for exclusion to mean anything: the
+        scanners decide by where a file sits, and a link would let the same
+        document be a task source down one path and a note down another.
+        """
         target = pathlib.Path(path).expanduser()
         target = target if target.is_absolute() else self.root / target
-        target = target.resolve()
+        named = pathlib.Path(os.path.normpath(target))
+        resolved = target.resolve()
         try:
-            rel = target.relative_to(self.root)
+            rel = named.relative_to(self.root)
         except ValueError:
             raise TaskStoreError(f"{path} is outside the vault") from None
-        if not target.is_file():
+        if resolved != named:
+            raise TaskStoreError(
+                f"{rel} is a link to {resolved}; name the note where it lives"
+            )
+        if not named.is_file():
             raise TaskStoreError(f"no such file: {rel}")
-        return target, rel
+        return named, rel
 
     def group_for(self, relpath, tags=()):
         """Which group a task belongs to: by folder first, then by tag."""
@@ -90,11 +102,24 @@ class Config:
         return ""
 
     def todo_file(self, group=None):
+        """Where tasks for a group are written.
+
+        An excluded destination is refused here, before anything is written:
+        the file is not scanned, so a task added to it would vanish from every
+        listing, and a move into it would delete the task from where it was.
+        """
         if not group:
-            return self.root / self.inbox_file
-        if group not in self.groups:
+            path = self.root / self.inbox_file
+        elif group not in self.groups:
             raise KeyError(f"unknown group: {group}")
-        return self.root / self.groups[group].rstrip("/") / self.inbox_file
+        else:
+            path = self.root / self.groups[group].rstrip("/") / self.inbox_file
+        rel = path.relative_to(self.root)
+        if self.is_excluded(rel):
+            raise TaskStoreError(
+                f"{rel} is excluded from the task sources, so it cannot hold tasks"
+            )
+        return path
 
     def group_root(self, group):
         if group not in self.groups:

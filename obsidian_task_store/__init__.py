@@ -18,7 +18,7 @@ from .errors import (
     TaskStoreError,
 )
 from .model import Task
-from .notes import NoteMark, mark_line
+from .notes import NoteMark
 from .parse import parse_document, parse_vault
 from .serialise import normalise
 from .store import TaskStore
@@ -29,5 +29,5 @@ __all__ = [
     "Config", "Task", "TaskStore", "NoteMark",
     "TaskStoreError", "TaskNotFound", "AmbiguousTask", "SectionNotFound", "StaleTask",
     "NoteLineNotFound", "AmbiguousNoteLine",
-    "parse_document", "parse_vault", "normalise", "mark_line",
+    "parse_document", "parse_vault", "normalise",
 ]

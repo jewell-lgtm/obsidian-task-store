@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from .errors import AmbiguousNoteLine, NoteLineNotFound
 from .locking import locked_text
+from .parse import FENCE_RE
 
 #: The status vocabulary the queue mirrors: open, in progress, complete.
 #: ``doing`` is the ``[/]`` that ``ots start`` writes on a task.
@@ -77,12 +78,22 @@ def find_line(text, ident):
 
     Raises rather than guessing. A queue with the same id on two lines is a
     generator bug, and picking one of them would hide it.
+
+    Fenced code is skipped, as it is for tasks: a note explaining how its own
+    boxes work is the likeliest place to find an example checkbox carrying a
+    real id, and ticking the documentation would be the worst outcome here.
     """
-    hits = [
-        (n, start, end)
-        for n, (start, end) in enumerate(line_spans(text), 1)
-        if CHECKBOX_RE.match(text[start:end]) and references(text[start:end], ident)
-    ]
+    hits = []
+    fenced = False
+    for n, (start, end) in enumerate(line_spans(text), 1):
+        line = text[start:end]
+        if FENCE_RE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        if CHECKBOX_RE.match(line) and references(line, ident):
+            hits.append((n, start, end))
     if not hits:
         raise NoteLineNotFound(f"no checkbox line references `{ident}`")
     if len(hits) > 1:
