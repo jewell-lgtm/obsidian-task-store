@@ -184,3 +184,105 @@ def test_tag_leaves_the_rest_of_the_line_alone(grouped_vault):
     assert tagged.due == "2026-01-01"
     assert tagged.title == "Ship it"
     assert not tagged.done
+
+
+EXCLUDING_CONFIG = """
+inbox = "todo.md#Inbox"
+sections = ["Now", "Later", "Done"]
+exclude = ["work/notes/handovers/", "work/queue.md"]
+
+[groups]
+work = "work/"
+"""
+
+
+def test_excluded_files_are_ticked_not_tasked(vault):
+    """A checkbox in an excluded plan or handover is never a task, but the
+    same line in a todo file still is. `fmt` leaves excluded files alone."""
+    root = vault(
+        {
+            "todo.md": "# Todo\n\n## Inbox\n",
+            "work/todo.md": "# Work\n\n## Now\n\n- [ ] Real task\n\n## Done\n",
+            "work/queue.md": "# Plan\n\n- [ ] **1 ·** Real task, as the day orders it\n",
+            "work/notes/handovers/x.md": (
+                "# Handover\n\n\n\n- [ ] Criterion one\n- [ ] Red-on-revert\n"
+            ),
+            "work/notes/rca.md": "# RCA\n\n- [ ] Imported checklist item\n",
+        },
+        config=EXCLUDING_CONFIG,
+    )
+    store = TaskStore.open(root)
+    titles = sorted(t.title for t in store.tasks())
+    assert titles == ["Imported checklist item", "Real task"]
+    assert store.normalise_all() == []  # the triple blank in the handover is not ours to touch
+
+
+def test_an_exclude_entry_is_normalised_once_when_the_vault_is_opened(vault):
+    """A trailing slash or a Windows separator in `.tasks.toml` is one shape
+    by the time anything matches against it."""
+    root = vault(
+        {"todo.md": "# Todo\n\n## Inbox\n", "notes/day.md": "- [ ] Ticked, not tasked\n"},
+        config='exclude = ["./notes/"]\n',
+    )
+    store = TaskStore.open(root)
+    assert store.config.exclude == ["notes"]
+    assert store.tasks() == []
+
+
+def test_start_marks_in_progress_without_moving_or_renaming(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Fix the sync queue", group="work", section="Now")
+    started = store.start(task.id)
+    assert started.id == task.id
+    assert started.status == "/" and not started.done
+    assert "- [/] Fix the sync queue" in (grouped_vault / "work" / "todo.md").read_text()
+    assert [t.id for t in store.tasks(status="open")] == [task.id]
+    assert store.start(task.id).status == "/"  # idempotent
+
+
+def test_start_then_done_ends_as_x(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Fix the sync queue", group="work", section="Now")
+    store.start(task.id)
+    done = store.complete(task.id, on="2026-09-16")
+    assert done.done and done.status == "x"
+    assert "- [/]" not in (grouped_vault / "work" / "todo.md").read_text()
+
+
+def test_start_refuses_a_done_task(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Already shipped", group="work", section="Now")
+    store.complete(task.id, on="2026-09-16")
+    with pytest.raises(TaskStoreError):
+        store.start(task.id)
+
+
+def test_status_is_visible_in_json_and_listing(grouped_vault, capsys):
+    from obsidian_task_store.cli import main
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Fix the sync queue", group="work", section="Now")
+    store.start(task.id)
+    assert store.get(task.id).as_dict()["status"] == "/"
+    main(["--vault", str(grouped_vault), "list", "--group", "work"])
+    assert f"{task.id}  [/]" in capsys.readouterr().out
+
+
+def test_unknown_id_says_why_and_what_to_do(grouped_vault):
+    store = TaskStore.open(grouped_vault)
+    with pytest.raises(TaskNotFound) as err:
+        store.get("f131")
+    assert "f131" in str(err.value) and "ots list" in str(err.value)
+
+
+def test_start_and_note_mark_write_the_same_marker(grouped_vault):
+    """One vocabulary: `[/]` has a single spelling in the package."""
+    from obsidian_task_store.model import STATUS_MARKS
+
+    store = TaskStore.open(grouped_vault)
+    task = store.add("Fix the sync queue", group="work", section="Now")
+    store.start(task.id)
+    line = next(
+        line for line in (grouped_vault / "work" / "todo.md").read_text().splitlines()
+        if "Fix the sync queue" in line
+    )
+    assert line.strip().startswith(f"- [{STATUS_MARKS['doing']}]")

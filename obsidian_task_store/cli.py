@@ -11,8 +11,7 @@ import json
 import sys
 
 from .errors import TaskStoreError
-from .model import PRIORITY_RANK
-from .notes import MARKS
+from .model import PRIORITY_RANK, STATUS_MARKS
 from .store import TaskStore
 
 
@@ -22,7 +21,7 @@ def _print_tasks(tasks, verbose=False):
         return
     width = max((len(t.group) for t in tasks), default=0)
     for task in tasks:
-        mark = "x" if task.done else " "
+        mark = "x" if task.done else task.status
         due = task.due or "—"
         group = f"{task.group:<{width}}  " if width else ""
         line = f"{task.id}  [{mark}]  {group}{due:>10}  {task.title}"
@@ -55,6 +54,12 @@ def cmd_done(args, store):
     for ident in args.ids:
         task = store.complete(ident)
         print(f"{task.id}  done  {task.title}")
+
+
+def cmd_start(args, store):
+    for ident in args.ids:
+        task = store.start(ident)
+        print(f"{task.id}  started  {task.title}")
 
 
 def cmd_move(args, store):
@@ -114,6 +119,10 @@ def build_parser():
     p.add_argument("ids", nargs="+")
     p.set_defaults(fn=cmd_done)
 
+    p = sub.add_parser("start", help="mark tasks in progress ([/])")
+    p.add_argument("ids", nargs="+")
+    p.set_defaults(fn=cmd_start)
+
     p = sub.add_parser("move", help="move a task into a group")
     p.add_argument("id")
     p.add_argument("--group", required=True)
@@ -142,7 +151,7 @@ def build_parser():
     n.add_argument("id")
     n.add_argument("--in", dest="file", required=True, metavar="PATH",
                    help="the note, relative to the vault root")
-    n.add_argument("--as", dest="status", choices=sorted(MARKS), default="done",
+    n.add_argument("--as", dest="status", choices=sorted(STATUS_MARKS), default="done",
                    help="marker to write (default: done)")
     n.set_defaults(fn=cmd_note_mark)
 

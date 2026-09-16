@@ -30,13 +30,23 @@ class Config:
     exclude: list = field(default_factory=list)
 
     def __post_init__(self):
-        """Refuse a config that excludes a file it also writes tasks to.
+        """Normalise the exclude list, then refuse a self-contradicting vault.
+
+        Entries are normalised here rather than where they are matched, so a
+        ``.tasks.toml`` written on Windows, or one with a trailing slash on a
+        folder, is one shape by the time anything reads it.
+
+        A file that is both excluded and a task destination is refused.
 
         The two settings contradict each other: the file would be written by
         ``add`` and ``move`` and then read by nothing, so the task would vanish
         from every listing, and ``note mark`` would treat a task file as a note.
         Better to reject the vault than to pick one meaning.
         """
+        self.exclude = [
+            _slashes(entry).removeprefix("./").rstrip("/") for entry in self.exclude
+        ]
+        self.exclude = [entry for entry in self.exclude if entry]
         for group in (None, *self.groups):
             rel = _slashes(self.todo_file(group).relative_to(self.root))
             if self.is_excluded(rel):
@@ -71,11 +81,7 @@ class Config:
         names one file or, with or without a trailing slash, a folder.
         """
         rel = _slashes(relpath).removeprefix("./")
-        for entry in self.exclude:
-            entry = _slashes(entry).removeprefix("./").rstrip("/")
-            if entry and (rel == entry or rel.startswith(f"{entry}/")):
-                return True
-        return False
+        return any(rel == entry or rel.startswith(f"{entry}/") for entry in self.exclude)
 
     def note_path(self, path):
         """Where a named note is, inside the vault, or a refusal.

@@ -15,13 +15,8 @@ from dataclasses import dataclass
 
 from .errors import AmbiguousNoteLine, NoteLineNotFound
 from .locking import locked_text
+from .model import STATUS_MARKS
 from .parse import FENCE_RE
-
-#: The status vocabulary the queue mirrors: open, in progress, complete.
-#: ``doing`` is the ``[/]`` that ``ots start`` writes on a task.
-MARKS = {"todo": " ", "doing": "/", "done": "x"}
-
-STATUS_BY_MARK = {mark: status for status, mark in MARKS.items()}
 
 CHECKBOX_RE = re.compile(r"^[ \t]*- \[(?P<mark>[^\]])\]")
 
@@ -110,9 +105,9 @@ def mark_line(path, ident, status="done"):
     one-character splice, which is what keeps the rest of the line — and the
     rest of the document — identical.
     """
-    if status not in MARKS:
+    if status not in STATUS_MARKS:
         raise ValueError(f"unknown status: {status}")
-    want = MARKS[status]
+    want = STATUS_MARKS[status]
 
     with locked_text(path) as handle:
         text = handle.read()

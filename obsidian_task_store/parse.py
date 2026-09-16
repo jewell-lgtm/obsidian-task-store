@@ -36,9 +36,11 @@ def parse_document(text, *, path=None, group=""):
     return tasks
 
 
-def iter_markdown(root):
+def iter_markdown(root, is_excluded=None):
     for path in sorted(root.rglob("*.md")):
         if any(part == ".git" or part.startswith(".") and part != "." for part in path.parts):
+            continue
+        if is_excluded is not None and is_excluded(path.relative_to(root)):
             continue
         yield path
 
@@ -51,10 +53,8 @@ def parse_vault(config):
     reporting the ones inside a fence.
     """
     tasks = []
-    for path in iter_markdown(config.root):
+    for path in iter_markdown(config.root, config.is_excluded):
         rel = path.relative_to(config.root)
-        if config.is_excluded(rel):
-            continue
         text = path.read_text()
         # Group by folder first; a tag can only settle it for files that sit
         # outside every group folder, such as the shared inbox.

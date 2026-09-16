@@ -7,7 +7,7 @@ from datetime import date
 
 from .config import CONFIG_NAME, Config
 from .errors import AmbiguousTask, TaskNotFound, TaskStoreError
-from .model import DATE_SIGNIFIERS, EMOJI_BY_PRIORITY, PRIORITY_RANK, Task
+from .model import DATE_SIGNIFIERS, EMOJI_BY_PRIORITY, PRIORITY_RANK, STATUS_MARKS, Task
 from .notes import mark_line
 from .parse import parse_vault
 from .serialise import insert_into_section, normalise, remove_line, replace_line
@@ -82,6 +82,25 @@ class TaskStore:
         path = self.config.todo_file(None if to_inbox else group)
         self._edit(path, lambda text: insert_into_section(text, section, f"- [ ] {body}"))
         return self.get(Task.parse(f"- [ ] {body}", group=group or "").id)
+
+    def start(self, ident):
+        """Mark a task in progress: the box becomes ``[/]``.
+
+        The Obsidian Tasks plugin's core statuses render and count that as
+        started. The line stays where it is, the id does not change, and the
+        task stays open. Idempotent, and a done task is refused rather than
+        quietly reopened.
+        """
+        task = self.get(ident)
+        if task.done:
+            raise TaskStoreError(f"{task.id} is done; starting it would reopen it")
+        if task.status == STATUS_MARKS["doing"]:
+            return task
+        before = task.render()
+        task.status = STATUS_MARKS["doing"]
+        after = task.render()
+        self._edit(task.path, lambda text: replace_line(text, task.lineno, before, after))
+        return self.get(ident)
 
     def complete(self, ident, *, on=None):
         task = self.get(ident)
