@@ -107,10 +107,9 @@ home = "home/"
 
 `exclude` names the files whose checkboxes are for ticking rather than tasks — one file, or
 a folder with or without its trailing slash. They are not parsed, not listed, and not
-normalised, and they are the only files `ots note mark` will write to. An excluded file
-cannot also be a task destination: excluding the inbox, or a group's `todo.md`, is refused
-when `add` or `move` would write there rather than dropping the task into a file nothing
-reads.
+normalised, and they are the only files `ots note mark` will write to. A file cannot be
+both excluded and a task destination: excluding the inbox, or a group's `todo.md`, is
+refused when the vault is opened, since tasks written there would be read back by nothing.
 
 A task's group comes from the folder it lives in. For the shared inbox, which sits outside
 every group folder, a `#work` tag settles it instead.

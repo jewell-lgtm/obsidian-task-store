@@ -29,6 +29,22 @@ class Config:
     groups: dict = field(default_factory=dict)
     exclude: list = field(default_factory=list)
 
+    def __post_init__(self):
+        """Refuse a config that excludes a file it also writes tasks to.
+
+        The two settings contradict each other: the file would be written by
+        ``add`` and ``move`` and then read by nothing, so the task would vanish
+        from every listing, and ``note mark`` would treat a task file as a note.
+        Better to reject the vault than to pick one meaning.
+        """
+        for group in (None, *self.groups):
+            rel = _slashes(self.todo_file(group).relative_to(self.root))
+            if self.is_excluded(rel):
+                raise TaskStoreError(
+                    f"{rel} is excluded, but it is where "
+                    f"{group or 'the inbox'} writes its tasks"
+                )
+
     @classmethod
     def load(cls, start=None):
         root = _find_root(start)
@@ -102,24 +118,11 @@ class Config:
         return ""
 
     def todo_file(self, group=None):
-        """Where tasks for a group are written.
-
-        An excluded destination is refused here, before anything is written:
-        the file is not scanned, so a task added to it would vanish from every
-        listing, and a move into it would delete the task from where it was.
-        """
         if not group:
-            path = self.root / self.inbox_file
-        elif group not in self.groups:
+            return self.root / self.inbox_file
+        if group not in self.groups:
             raise KeyError(f"unknown group: {group}")
-        else:
-            path = self.root / self.groups[group].rstrip("/") / self.inbox_file
-        rel = path.relative_to(self.root)
-        if self.is_excluded(rel):
-            raise TaskStoreError(
-                f"{rel} is excluded from the task sources, so it cannot hold tasks"
-            )
-        return path
+        return self.root / self.groups[group].rstrip("/") / self.inbox_file
 
     def group_root(self, group):
         if group not in self.groups:

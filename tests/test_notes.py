@@ -209,13 +209,21 @@ def test_a_missing_note_is_refused(queue_vault):
 # ------------------------------------------------------ never near a task file
 
 
-def test_the_inbox_cannot_be_excluded_out_from_under_add(vault):
-    """An excluded destination is refused before anything is written."""
+def test_a_vault_cannot_exclude_the_inbox_it_writes_to(vault):
+    """Excluded and a task destination are contradictory, so the vault is refused."""
     root = vault({"todo.md": "# Todo\n\n## Inbox\n"}, config='exclude = ["todo.md"]\n')
-    before = (root / "todo.md").read_bytes()
-    with pytest.raises(TaskStoreError, match="cannot hold tasks"):
-        TaskStore.open(root).add("Buy milk")
-    assert (root / "todo.md").read_bytes() == before
+    with pytest.raises(TaskStoreError, match="it is where the inbox writes"):
+        TaskStore.open(root)
+
+
+def test_a_vault_cannot_exclude_a_group_inbox_either(vault):
+    """`move` would otherwise delete the source and hide the destination."""
+    root = vault(
+        {"todo.md": "# Todo\n\n## Inbox\n", "pima/todo.md": TASK_FILE},
+        config='exclude = ["pima/"]\n\n[groups]\npima = "pima/"\n',
+    )
+    with pytest.raises(TaskStoreError, match="it is where pima writes"):
+        TaskStore.open(root)
 
 
 def test_a_link_into_an_excluded_folder_is_refused(queue_vault):
