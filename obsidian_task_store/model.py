@@ -37,6 +37,10 @@ PRIORITY_BY_EMOJI = {
 }
 EMOJI_BY_PRIORITY = {name: emoji for emoji, name in PRIORITY_BY_EMOJI.items()}
 
+#: The checkbox markers, by the status name the CLI takes. Both the task
+#: commands and ``note mark`` write these, so there is one spelling of them.
+STATUS_MARKS = {"todo": " ", "doing": "/", "done": "x"}
+
 #: Rank for sorting; "normal" is the absence of a priority emoji.
 PRIORITY_RANK = {"highest": 0, "high": 1, "medium": 2, "normal": 3, "low": 4, "lowest": 5}
 
@@ -223,6 +227,7 @@ class Task:
             "title": self.title,
             "description": self.description,
             "done": self.done,
+            "status": self.status,
             "priority": self.priority,
             "tags": self.tags,
             "file": str(self.path) if self.path else None,

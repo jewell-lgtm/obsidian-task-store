@@ -36,17 +36,24 @@ def parse_document(text, *, path=None, group=""):
     return tasks
 
 
-def iter_markdown(root):
+def iter_markdown(root, is_excluded=None):
     for path in sorted(root.rglob("*.md")):
         if any(part == ".git" or part.startswith(".") and part != "." for part in path.parts):
+            continue
+        if is_excluded is not None and is_excluded(path.relative_to(root)):
             continue
         yield path
 
 
 def parse_vault(config):
-    """Every task in the vault, with groups resolved from config."""
+    """Every task in the vault, with groups resolved from config.
+
+    Excluded files are skipped outright. Their checkboxes are for ticking, not
+    tasks, and reporting a day plan's boxes as tasks is the same mistake as
+    reporting the ones inside a fence.
+    """
     tasks = []
-    for path in iter_markdown(config.root):
+    for path in iter_markdown(config.root, config.is_excluded):
         rel = path.relative_to(config.root)
         text = path.read_text()
         # Group by folder first; a tag can only settle it for files that sit

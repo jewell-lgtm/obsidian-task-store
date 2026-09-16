@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from .config import Config
+from .config import CONFIG_NAME, Config
 from .errors import AmbiguousTask, TaskNotFound, TaskStoreError
-from .model import DATE_SIGNIFIERS, EMOJI_BY_PRIORITY, PRIORITY_RANK, Task
+from .model import DATE_SIGNIFIERS, EMOJI_BY_PRIORITY, PRIORITY_RANK, STATUS_MARKS, Task
+from .notes import mark_line
 from .parse import parse_vault
 from .serialise import insert_into_section, normalise, remove_line, replace_line
 
@@ -81,6 +82,25 @@ class TaskStore:
         path = self.config.todo_file(None if to_inbox else group)
         self._edit(path, lambda text: insert_into_section(text, section, f"- [ ] {body}"))
         return self.get(Task.parse(f"- [ ] {body}", group=group or "").id)
+
+    def start(self, ident):
+        """Mark a task in progress: the box becomes ``[/]``.
+
+        The Obsidian Tasks plugin's core statuses render and count that as
+        started. The line stays where it is, the id does not change, and the
+        task stays open. Idempotent, and a done task is refused rather than
+        quietly reopened.
+        """
+        task = self.get(ident)
+        if task.done:
+            raise TaskStoreError(f"{task.id} is done; starting it would reopen it")
+        if task.status == STATUS_MARKS["doing"]:
+            return task
+        before = task.render()
+        task.status = STATUS_MARKS["doing"]
+        after = task.render()
+        self._edit(task.path, lambda text: replace_line(text, task.lineno, before, after))
+        return self.get(ident)
 
     def complete(self, ident, *, on=None):
         task = self.get(ident)
@@ -172,10 +192,38 @@ class TaskStore:
         self._edit(task.path, lambda text: remove_line(text, task.lineno, task.render()))
         return task
 
+    def mark_note(self, ident, path, *, status="done"):
+        """Set the checkbox marker on the one line in a note naming ``ident``.
+
+        A note is not a task source, and this is not completion: it flips the
+        marker on a line that *refers* to a task, so a generated view such as a
+        queue can be ticked off. The real task is completed with ``done``.
+
+        Pointing this at a task source is refused rather than done quietly. The
+        two kinds of checkbox look identical, and an agent that mixed them up
+        would leave a task marked complete with no done date and no Done
+        section move.
+        """
+        target, rel = self.config.note_path(path)
+        if not self.config.is_excluded(rel):
+            raise TaskStoreError(
+                f"{rel} is a task source: its checkboxes are tasks, and `done` owns them. "
+                f"Exclude it in {CONFIG_NAME} if its boxes are for ticking."
+            )
+        return mark_line(target, ident, status=status)
+
     def normalise_all(self):
+        """Re-normalise whitespace across the vault's task sources.
+
+        Excluded files are left alone: they are not written by this package
+        except one marker at a time, and normalising a generated document would
+        be a large unasked-for diff.
+        """
         changed = []
         for path in sorted(self.config.root.rglob("*.md")):
             if ".git" in path.parts:
+                continue
+            if self.config.is_excluded(path.relative_to(self.config.root)):
                 continue
             before = path.read_text()
             after = normalise(before)

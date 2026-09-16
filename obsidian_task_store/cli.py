@@ -11,7 +11,7 @@ import json
 import sys
 
 from .errors import TaskStoreError
-from .model import PRIORITY_RANK
+from .model import PRIORITY_RANK, STATUS_MARKS
 from .store import TaskStore
 
 
@@ -21,7 +21,7 @@ def _print_tasks(tasks, verbose=False):
         return
     width = max((len(t.group) for t in tasks), default=0)
     for task in tasks:
-        mark = "x" if task.done else " "
+        mark = "x" if task.done else task.status
         due = task.due or "—"
         group = f"{task.group:<{width}}  " if width else ""
         line = f"{task.id}  [{mark}]  {group}{due:>10}  {task.title}"
@@ -56,6 +56,12 @@ def cmd_done(args, store):
         print(f"{task.id}  done  {task.title}")
 
 
+def cmd_start(args, store):
+    for ident in args.ids:
+        task = store.start(ident)
+        print(f"{task.id}  started  {task.title}")
+
+
 def cmd_move(args, store):
     task = store.move(args.id, group=args.group, section=args.section)
     print(f"{task.id}  moved to {args.group}/{args.section}  {task.title}")
@@ -80,6 +86,12 @@ def cmd_show(args, store):
 def cmd_fmt(args, store):
     changed = store.normalise_all()
     print("\n".join(str(p) for p in changed) if changed else "already tidy")
+
+
+def cmd_note_mark(args, store):
+    mark = store.mark_note(args.id, args.file, status=args.status)
+    already = "" if mark.changed else "already "
+    print(f"{args.id}  {already}{args.status}  {args.file}:{mark.lineno}")
 
 
 def build_parser():
@@ -107,6 +119,10 @@ def build_parser():
     p.add_argument("ids", nargs="+")
     p.set_defaults(fn=cmd_done)
 
+    p = sub.add_parser("start", help="mark tasks in progress ([/])")
+    p.add_argument("ids", nargs="+")
+    p.set_defaults(fn=cmd_start)
+
     p = sub.add_parser("move", help="move a task into a group")
     p.add_argument("id")
     p.add_argument("--group", required=True)
@@ -128,6 +144,16 @@ def build_parser():
     p = sub.add_parser("show", help="one task as json")
     p.add_argument("id")
     p.set_defaults(fn=cmd_show)
+
+    p = sub.add_parser("note", help="tick a checkbox in a note that is not a task source")
+    note = p.add_subparsers(dest="note_command", required=True)
+    n = note.add_parser("mark", help="set the marker on the line referencing a task id")
+    n.add_argument("id")
+    n.add_argument("--in", dest="file", required=True, metavar="PATH",
+                   help="the note, relative to the vault root")
+    n.add_argument("--as", dest="status", choices=sorted(STATUS_MARKS), default="done",
+                   help="marker to write (default: done)")
+    n.set_defaults(fn=cmd_note_mark)
 
     p = sub.add_parser("fmt", help="normalise whitespace across the vault")
     p.set_defaults(fn=cmd_fmt)

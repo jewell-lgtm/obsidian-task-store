@@ -44,6 +44,9 @@ a41c  added  Book the team retro
 
 $ ots done 0f98
 0f98  done  Chase VPN access for the new starter
+
+$ ots note mark 0f98 --in work/standup.md
+0f98  done  work/standup.md:12
 ```
 
 ## What it does that a regex does not
@@ -62,6 +65,10 @@ heading, no accumulating runs. Repeated programmatic edits do not degrade the fi
 
 **Fenced code is not parsed.** Documentation and query blocks are full of example
 checkboxes. Reporting those as real tasks is worse than missing them.
+
+**Notes are not task sources.** A day's plan, a handover's acceptance criteria, a generated
+queue: files listed in `exclude` are skipped entirely, so their boxes are never reported as
+tasks and `ots fmt` never reformats them.
 
 ## The full emoji vocabulary
 
@@ -91,10 +98,18 @@ To describe a vault split into groups, drop a `.tasks.toml` at its root:
 inbox = "todo.md#Inbox"
 sections = ["Now", "Later", "Done"]
 
+exclude = ["queue.md", "handovers/", "daily/"]
+
 [groups]
 work = "work/"
 home = "home/"
 ```
+
+`exclude` names the files whose checkboxes are for ticking rather than tasks — one file, or
+a folder with or without its trailing slash. They are not parsed, not listed, and not
+normalised, and they are the only files `ots note mark` will write to. A file cannot be
+both excluded and a task destination: excluding the inbox, or a group's `todo.md`, is
+refused when the vault is opened, since tasks written there would be read back by nothing.
 
 A task's group comes from the folder it lives in. For the shared inbox, which sits outside
 every group folder, a `#work` tag settles it instead.
@@ -128,6 +143,39 @@ task.get("recurrence")  # 'every week'
 task.render()        # unchanged, byte for byte
 ```
 
+## Ticking a box that is not a task
+
+A generated view — a queue, a day plan, a handover's acceptance criteria — carries `- [ ]`
+lines that *refer* to tasks by id rather than being tasks. `ots note mark` flips the marker
+on the one line naming an id:
+
+```console
+$ ots note mark 6670 --in queue.md --as doing
+6670  doing  queue.md:53
+
+$ ots note mark 6670 --in queue.md
+6670  done  queue.md:53
+
+$ ots note mark 6670 --in queue.md
+6670  already done  queue.md:53
+```
+
+`--as` takes `todo`, `doing` or `done` — the `[ ]`, `[/]` and `[x]` a task already uses.
+
+This is not completion. The real task is still finished with `ots done`; this only writes
+the marker in a note, and it refuses a file that is not excluded so that the two can never
+be confused. The line has to be a checkbox line carrying the id as a whole backticked
+token, `` `6670` ``, which is how such views write ids: a looser match would also hit dates
+and short shas, since an id is four hex characters. No line or two lines is an error and
+no write, because a view with the same id twice is a bug in whatever generated it. Fenced
+code is skipped, as it is for tasks — a note explaining how its own boxes work is the
+likeliest place to find an example carrying a real id. A path that resolves somewhere other
+than where it was spelled is refused too: one file needs one identity, or the same document
+would be a note down one path and a task source down another.
+
+Only the one marker character changes. The line's prose, formatting and trailing links, the
+rest of the document, its line endings and its trailing newline all come back identical.
+
 ## Built for agents
 
 The default output is one line per task with no file paths, because the common caller is
@@ -136,10 +184,17 @@ needs to process it, and `-v` adds `file:line` when a human is debugging.
 
 ## Concurrency
 
-Writes are guarded: if the target line is not what was read, the write is refused with
+Task writes are guarded: if the target line is not what was read, the write is refused with
 `StaleTask` rather than clobbering somebody else's edit. This is an optimistic check, not
 a lock — it catches a vault edited in Obsidian or by another process between your read and
 your write, but two writers racing within the same moment can still interleave.
+
+`ots note mark` holds an exclusive advisory lock on the note for the whole read-modify-write
+instead. It has to: the caller names a line by id rather than by content, so there is
+nothing to check the write against, and two agents ticking two items in the same queue is
+the ordinary case rather than the unlucky one. The lock orders writers going through this
+package on one machine. It does not order an editor saving over the top, and where there is
+no file locking to be had the note write is refused rather than done unguarded.
 
 ## Development
 
