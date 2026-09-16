@@ -43,10 +43,7 @@ class Config:
         from every listing, and ``note mark`` would treat a task file as a note.
         Better to reject the vault than to pick one meaning.
         """
-        self.exclude = [
-            _slashes(entry).removeprefix("./").rstrip("/") for entry in self.exclude
-        ]
-        self.exclude = [entry for entry in self.exclude if entry]
+        self.exclude = [entry for entry in map(_exclude_entry, self.exclude) if entry]
         for group in (None, *self.groups):
             rel = _slashes(self.todo_file(group).relative_to(self.root))
             if self.is_excluded(rel):
@@ -138,6 +135,16 @@ class Config:
 
 def _slashes(path):
     return str(path).replace(os.sep, "/")
+
+
+def _exclude_entry(entry):
+    """One shape for a path written in a config file rather than read off disk.
+
+    A backslash is normalised here and nowhere else: in ``.tasks.toml`` it is a
+    separator from whoever wrote the file on Windows, but in a name off a POSIX
+    filesystem it is a character in that name.
+    """
+    return _slashes(str(entry).replace("\\", "/")).removeprefix("./").rstrip("/")
 
 
 def _find_root(start=None):

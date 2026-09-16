@@ -12,14 +12,21 @@ from __future__ import annotations
 import pathlib
 import sys
 
+from .config import Config
 from .parse import iter_markdown, parse_document
 
 
 def check(root):
-    root = pathlib.Path(root).expanduser().resolve()
+    """Task sources only.
+
+    Excluded files are not written by the mutating commands, so a checkbox in
+    one failing to re-render is not a reason to keep them away from the vault.
+    """
+    config = Config.load(pathlib.Path(root).expanduser().resolve())
+    root = config.root
     mismatches = []
     seen = 0
-    for path in iter_markdown(root):
+    for path in iter_markdown(root, config.is_excluded):
         lines = path.read_text().splitlines()
         for task in parse_document(path.read_text(), path=path):
             seen += 1

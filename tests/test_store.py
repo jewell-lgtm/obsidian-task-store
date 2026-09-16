@@ -218,8 +218,8 @@ def test_excluded_files_are_ticked_not_tasked(vault):
 
 
 def test_an_exclude_entry_is_normalised_once_when_the_vault_is_opened(vault):
-    """A trailing slash or a Windows separator in `.tasks.toml` is one shape
-    by the time anything matches against it."""
+    """A trailing slash or a `./` prefix is one shape by the time anything
+    matches against it."""
     root = vault(
         {"todo.md": "# Todo\n\n## Inbox\n", "notes/day.md": "- [ ] Ticked, not tasked\n"},
         config='exclude = ["./notes/"]\n',
@@ -227,6 +227,22 @@ def test_an_exclude_entry_is_normalised_once_when_the_vault_is_opened(vault):
     store = TaskStore.open(root)
     assert store.config.exclude == ["notes"]
     assert store.tasks() == []
+
+
+def test_a_windows_written_exclude_works_on_a_posix_vault(vault):
+    """A backslash in `.tasks.toml` is whoever wrote it using their separator.
+    A literal TOML string, so the backslashes reach the loader intact."""
+    root = vault(
+        {
+            "todo.md": "# Todo\n\n## Inbox\n",
+            "notes/handovers/x.md": "# X\n\n- [ ] Criterion, not a task\n",
+        },
+        config="exclude = ['notes\\handovers\\']\n",
+    )
+    store = TaskStore.open(root)
+    assert store.config.exclude == ["notes/handovers"]
+    assert store.tasks() == []
+    assert store.normalise_all() == []
 
 
 def test_start_marks_in_progress_without_moving_or_renaming(grouped_vault):
@@ -274,15 +290,48 @@ def test_unknown_id_says_why_and_what_to_do(grouped_vault):
     assert "f131" in str(err.value) and "ots list" in str(err.value)
 
 
-def test_start_and_note_mark_write_the_same_marker(grouped_vault):
-    """One vocabulary: `[/]` has a single spelling in the package."""
+def test_start_and_note_mark_read_one_vocabulary(vault, monkeypatch):
+    """`[/]` has a single definition, so both writers follow when it moves.
+
+    Redefining the marker is the only way to tell sharing from two tables that
+    happen to agree: with a private copy in `notes`, only the task line moves.
+    """
     from obsidian_task_store.model import STATUS_MARKS
 
-    store = TaskStore.open(grouped_vault)
-    task = store.add("Fix the sync queue", group="work", section="Now")
-    store.start(task.id)
-    line = next(
-        line for line in (grouped_vault / "work" / "todo.md").read_text().splitlines()
-        if "Fix the sync queue" in line
+    root = vault(
+        {
+            "todo.md": "# Todo\n\n## Inbox\n",
+            "work/todo.md": "# Work\n\n## Now\n\n## Done\n",
+            "work/queue.md": "# Plan\n\n- [ ] **1 ·** ship it\n",
+        },
+        config=EXCLUDING_CONFIG,
     )
-    assert line.strip().startswith(f"- [{STATUS_MARKS['doing']}]")
+    store = TaskStore.open(root)
+    task = store.add("Fix the sync queue", group="work", section="Now")
+    (root / "work" / "queue.md").write_text(
+        f"# Plan\n\n- [ ] **1 ·** **`{task.id}`** ship it\n"
+    )
+    monkeypatch.setitem(STATUS_MARKS, "doing", "~")
+
+    store.start(task.id)
+    store.mark_note(task.id, "work/queue.md", status="doing")
+
+    assert "- [~] Fix the sync queue" in (root / "work" / "todo.md").read_text()
+    assert (root / "work" / "queue.md").read_text().splitlines()[2].startswith("- [~]")
+
+
+def test_the_round_trip_check_ignores_excluded_files(vault):
+    """An excluded box that would not re-render is not a reason to warn off a
+    vault: the mutating commands never write that file."""
+    from obsidian_task_store._roundtrip import check
+
+    root = vault(
+        {
+            "todo.md": "# Todo\n\n## Inbox\n",
+            "work/todo.md": "# Work\n\n## Now\n\n- [ ] Real task\n\n## Done\n",
+            "work/queue.md": "# Plan\n\n- [ ] Trailing space, as generated   \n",
+        },
+        config=EXCLUDING_CONFIG,
+    )
+    seen, mismatches = check(root)
+    assert (seen, mismatches) == (1, [])
